@@ -353,5 +353,34 @@ pub fn analyze_call_expr(analyzer: &mut DeclAnalyzer, expr: LuaCallExpr) -> Opti
         }
     }
 
+    analyze_special_call_decl(analyzer, &expr);
+
     Some(())
+}
+
+/// Handle framework calls configured via `runtime.globalDefineRules` /
+/// `runtime.classDefineRules` by synthesizing declarations.
+fn analyze_special_call_decl(analyzer: &mut DeclAnalyzer, expr: &LuaCallExpr) {
+    use super::special_call::{SpecialCallKind, add_synthetic_class_decl, add_synthetic_global_decl};
+
+    let Some(kind) = super::special_call::match_special_call(analyzer, expr) else {
+        return;
+    };
+    let range = expr.syntax().text_range();
+
+    match kind {
+        SpecialCallKind::GlobalDefine { name, .. } => {
+            add_synthetic_global_decl(analyzer, &name, range);
+        }
+        SpecialCallKind::ClassDefine { name, supers } => {
+            let _ = supers;
+            let type_id = add_synthetic_class_decl(analyzer, &name, range);
+            // The class name is also a global variable whose value is the class.
+            let decl_id = add_synthetic_global_decl(analyzer, &name, range);
+            analyzer.db.get_type_index_mut().bind_type(
+                decl_id.into(),
+                crate::LuaTypeCache::InferType(crate::db_index::LuaType::Def(type_id)),
+            );
+        }
+    }
 }

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 #[serde(rename_all = "camelCase")]
-#[derive(Default)]
 pub struct EmmyrcRuntime {
     /// Lua version.
     #[serde(default)]
@@ -30,6 +29,122 @@ pub struct EmmyrcRuntime {
     /// Special symbols.
     #[serde(default)]
     pub special: HashMap<String, EmmyrcSpecialSymbol>,
+    /// Glob patterns of files treated as environment modules.
+    /// For a matched file without a top-level `return`, all top-level globals
+    /// are synthesized into the module export table. eg. ["Common/battle_core/**"]
+    #[serde(default)]
+    pub environment_module_pattern: Vec<String>,
+    /// Rules for functions that define a global variable at runtime, eg. registerGlobal("NAME", value).
+    #[serde(default)]
+    pub global_define_rules: Vec<EmmyrcSpecialCallRule>,
+    /// Rules for functions that define a class at runtime, eg. DefineClass("NAME", Super).
+    #[serde(default)]
+    pub class_define_rules: Vec<EmmyrcSpecialCallRule>,
+}
+
+impl Default for EmmyrcRuntime {
+    fn default() -> Self {
+        Self {
+            version: EmmyrcLuaVersion::default(),
+            require_like_function: Vec::new(),
+            framework_versions: Vec::new(),
+            extensions: Vec::new(),
+            require_pattern: Vec::new(),
+            nonstandard_symbol: Vec::new(),
+            special: HashMap::new(),
+            environment_module_pattern: Vec::new(),
+            global_define_rules: default_global_define_rules(),
+            class_define_rules: default_class_define_rules(),
+        }
+    }
+}
+
+fn default_global_define_rules() -> Vec<EmmyrcSpecialCallRule> {
+    vec![EmmyrcSpecialCallRule {
+        function: "registerGlobal".to_string(),
+        params: vec![
+            EmmyrcParameterRule {
+                role: EmmyrcParamRole::Name,
+                index: 0,
+            },
+            EmmyrcParameterRule {
+                role: EmmyrcParamRole::Value,
+                index: 1,
+            },
+        ],
+    }]
+}
+
+fn default_class_define_rules() -> Vec<EmmyrcSpecialCallRule> {
+    vec![
+        EmmyrcSpecialCallRule {
+            function: "DefineClass".to_string(),
+            params: vec![
+                EmmyrcParameterRule {
+                    role: EmmyrcParamRole::Name,
+                    index: 0,
+                },
+                EmmyrcParameterRule {
+                    role: EmmyrcParamRole::Super,
+                    index: 1,
+                },
+            ],
+        },
+        EmmyrcSpecialCallRule {
+            function: "DefineComponent".to_string(),
+            params: vec![
+                EmmyrcParameterRule {
+                    role: EmmyrcParamRole::Name,
+                    index: 0,
+                },
+                EmmyrcParameterRule {
+                    role: EmmyrcParamRole::Super,
+                    index: 1,
+                },
+            ],
+        },
+    ]
+}
+
+/// Role of a parameter within a special call rule.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum EmmyrcParamRole {
+    /// The declared name (must be a string literal).
+    Name,
+    /// The value / module argument.
+    Value,
+    /// A super class.
+    Super,
+}
+
+/// A single parameter rule: which role a positional argument plays.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, PartialEq, Eq)]
+pub struct EmmyrcParameterRule {
+    /// The role of the argument.
+    pub role: EmmyrcParamRole,
+    /// Zero-based index of the argument.
+    pub index: usize,
+}
+
+/// Rule describing a runtime framework call, eg. registerGlobal / DefineClass.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, PartialEq, Eq)]
+pub struct EmmyrcSpecialCallRule {
+    /// Fully qualified function name being matched.
+    pub function: String,
+    /// Parameter rules.
+    #[serde(default)]
+    pub params: Vec<EmmyrcParameterRule>,
+}
+
+impl EmmyrcSpecialCallRule {
+    /// Return the index of the argument playing the given role.
+    pub fn get_index(&self, role: EmmyrcParamRole) -> Option<usize> {
+        self.params
+            .iter()
+            .find(|p| p.role == role)
+            .map(|p| p.index)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, PartialEq, Eq, Default)]
@@ -235,5 +350,56 @@ mod tests {
 
         let runtime: EmmyrcRuntime = serde_json::from_str(json2).unwrap();
         assert_eq!(runtime.version, EmmyrcLuaVersion::Lua51);
+    }
+
+    #[test]
+    fn test_default_special_call_rules() {
+        let runtime = EmmyrcRuntime::default();
+        assert_eq!(runtime.global_define_rules.len(), 1);
+        let global_rule = &runtime.global_define_rules[0];
+        assert_eq!(global_rule.function, "registerGlobal");
+        assert_eq!(global_rule.get_index(EmmyrcParamRole::Name), Some(0));
+        assert_eq!(global_rule.get_index(EmmyrcParamRole::Value), Some(1));
+
+        let class_rule = runtime
+            .class_define_rules
+            .iter()
+            .find(|r| r.function == "DefineClass")
+            .unwrap();
+        assert_eq!(class_rule.get_index(EmmyrcParamRole::Name), Some(0));
+        assert_eq!(class_rule.get_index(EmmyrcParamRole::Super), Some(1));
+    }
+
+    #[test]
+    fn test_custom_special_call_rules_deserialize() {
+        let json = r#"{
+            "globalDefineRules": [
+                {
+                    "function": "myRegister",
+                    "params": [
+                        { "role": "value", "index": 0 },
+                        { "role": "name", "index": 1 }
+                    ]
+                }
+            ],
+            "classDefineRules": [
+                {
+                    "function": "MyClass",
+                    "params": [ { "role": "name", "index": 0 } ]
+                }
+            ],
+            "environmentModulePattern": ["Common/battle_core/**"]
+        }"#;
+        let runtime: EmmyrcRuntime = serde_json::from_str(json).unwrap();
+        assert_eq!(runtime.global_define_rules.len(), 1);
+        let rule = &runtime.global_define_rules[0];
+        assert_eq!(rule.function, "myRegister");
+        assert_eq!(rule.get_index(EmmyrcParamRole::Name), Some(1));
+        assert_eq!(rule.get_index(EmmyrcParamRole::Value), Some(0));
+        assert_eq!(runtime.class_define_rules[0].function, "MyClass");
+        assert_eq!(
+            runtime.environment_module_pattern,
+            vec!["Common/battle_core/**".to_string()]
+        );
     }
 }

@@ -28,7 +28,9 @@ pub use inline_values::EmmyrcInlineValues;
 pub use references::EmmyrcReference;
 pub use reformat::{EmmyrcExternalTool, EmmyrcReformat};
 pub use resource::EmmyrcResource;
-pub use runtime::{EmmyrcLuaVersion, EmmyrcRuntime};
+pub use runtime::{
+    EmmyrcLuaVersion, EmmyrcParamRole, EmmyrcParameterRule, EmmyrcRuntime, EmmyrcSpecialCallRule,
+};
 pub use semantictoken::EmmyrcSemanticToken;
 pub use signature::EmmyrcSignature;
 pub use strict::EmmyrcStrict;

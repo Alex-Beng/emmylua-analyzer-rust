@@ -110,8 +110,52 @@
     "runtime": {
       "$ref": "#/$defs/EmmyrcRuntime",
       "default": {
+        "classDefineRules": [
+          {
+            "function": "DefineClass",
+            "params": [
+              {
+                "index": 0,
+                "role": "name"
+              },
+              {
+                "index": 1,
+                "role": "super"
+              }
+            ]
+          },
+          {
+            "function": "DefineComponent",
+            "params": [
+              {
+                "index": 0,
+                "role": "name"
+              },
+              {
+                "index": 1,
+                "role": "super"
+              }
+            ]
+          }
+        ],
+        "environmentModulePattern": [],
         "extensions": [],
         "frameworkVersions": [],
+        "globalDefineRules": [
+          {
+            "function": "registerGlobal",
+            "params": [
+              {
+                "index": 0,
+                "role": "name"
+              },
+              {
+                "index": 1,
+                "role": "value"
+              }
+            ]
+          }
+        ],
         "nonstandardSymbol": [],
         "requireLikeFunction": [],
         "requirePattern": [],
@@ -896,6 +940,46 @@
         "continue"
       ]
     },
+    "EmmyrcParamRole": {
+      "description": "Role of a parameter within a special call rule.",
+      "oneOf": [
+        {
+          "description": "The declared name (must be a string literal).",
+          "type": "string",
+          "const": "name"
+        },
+        {
+          "description": "The value / module argument.",
+          "type": "string",
+          "const": "value"
+        },
+        {
+          "description": "A super class.",
+          "type": "string",
+          "const": "super"
+        }
+      ]
+    },
+    "EmmyrcParameterRule": {
+      "description": "A single parameter rule: which role a positional argument plays.",
+      "type": "object",
+      "properties": {
+        "index": {
+          "description": "Zero-based index of the argument.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "role": {
+          "description": "The role of the argument.",
+          "$ref": "#/$defs/EmmyrcParamRole"
+        }
+      },
+      "required": [
+        "role",
+        "index"
+      ]
+    },
     "EmmyrcReference": {
       "type": "object",
       "properties": {
@@ -968,6 +1052,22 @@
     "EmmyrcRuntime": {
       "type": "object",
       "properties": {
+        "classDefineRules": {
+          "description": "Rules for functions that define a class at runtime, eg. DefineClass(\"NAME\", Super).",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EmmyrcSpecialCallRule"
+          }
+        },
+        "environmentModulePattern": {
+          "description": "Glob patterns of files treated as environment modules.\nFor a matched file without a top-level `return`, all top-level globals\nare synthesized into the module export table. eg. [\"Common/battle_core/**\"]",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
         "extensions": {
           "description": "file Extensions. eg: .lua, .lua.txt",
           "type": "array",
@@ -982,6 +1082,14 @@
           "default": [],
           "items": {
             "type": "string"
+          }
+        },
+        "globalDefineRules": {
+          "description": "Rules for functions that define a global variable at runtime, eg. registerGlobal(\"NAME\", value).",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EmmyrcSpecialCallRule"
           }
         },
         "nonstandardSymbol": {
@@ -1049,6 +1157,27 @@
           "default": true
         }
       }
+    },
+    "EmmyrcSpecialCallRule": {
+      "description": "Rule describing a runtime framework call, eg. registerGlobal / DefineClass.",
+      "type": "object",
+      "properties": {
+        "function": {
+          "description": "Fully qualified function name being matched.",
+          "type": "string"
+        },
+        "params": {
+          "description": "Parameter rules.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EmmyrcParameterRule"
+          }
+        }
+      },
+      "required": [
+        "function"
+      ]
     },
     "EmmyrcSpecialSymbol": {
       "type": "string",

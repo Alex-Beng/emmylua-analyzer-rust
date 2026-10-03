@@ -1,6 +1,7 @@
 mod docs;
 mod exprs;
 mod members;
+mod special_call;
 mod stats;
 
 use crate::{

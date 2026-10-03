@@ -178,7 +178,10 @@ This template is a good starting point for most Lua projects:
     "extensions": [],
     "requirePattern": [],
     "nonstandardSymbol": [],
-    "special": {}
+    "special": {},
+    "environmentModulePattern": [],
+    "globalDefineRules": [],
+    "classDefineRules": []
   },
   "semanticTokens": {
     "enable": true,
@@ -364,6 +367,9 @@ All remaining built-in rules default to `warning`:
 | `requirePattern` | `string[]` | `[]` | Module search patterns such as `?.lua` and `?/init.lua` |
 | `nonstandardSymbol` | `string[]` | `[]` | Allowed non-standard syntax symbols |
 | `special` | `object` | `{}` | Special function mappings |
+| `environmentModulePattern` | `string[]` | `[]` | Glob patterns of files whose top-level globals are synthesized into the module export table (for files without a top-level `return`) |
+| `globalDefineRules` | `object[]` | `registerGlobal` rule | Rules for functions that define a global at runtime |
+| `classDefineRules` | `object[]` | `DefineClass`/`DefineComponent` rules | Rules for functions that define a class at runtime |
 
 Supported `nonstandardSymbol` values:
 
@@ -388,6 +394,62 @@ Supported `nonstandardSymbol` values:
 - `continue`
 
 Supported `special` values: `none`, `require`, `error`, `assert`, `type`, `setmetatable`.
+
+#### Framework call rules
+
+Many frameworks wrap `require` / global registration / class definition behind
+custom functions. The `requireLikeFunction`, `globalDefineRules`,
+`classDefineRules` and `environmentModulePattern` options let the analyzer
+understand those conventions without modifying user code.
+
+- `requireLikeFunction`: function names treated exactly like `require`, e.g.
+  `import`, `kg_require`.
+- `environmentModulePattern`: for files matching these globs that have **no
+  top-level `return`**, all top-level globals are synthesized into the module
+  export table. This mirrors loaders that execute a module in an isolated
+  environment and return that environment.
+- `globalDefineRules`: functions that register a global at runtime. Each rule
+  maps positional arguments to roles (`name`, `value`).
+- `classDefineRules`: functions that define a class at runtime. Each rule maps
+  positional arguments to roles (`name`, `super`).
+
+`params` is a list of `{ "role": <role>, "index": <n> }` entries, where `role`
+is one of `name`, `value`, `super` and `index` is the zero-based argument
+position. Different projects may use different parameter orders.
+
+```json
+{
+  "runtime": {
+    "requireLikeFunction": ["import", "kg_require"],
+    "environmentModulePattern": ["Common/battle_core/**"],
+    "globalDefineRules": [
+      {
+        "function": "registerGlobal",
+        "params": [
+          { "role": "name", "index": 0 },
+          { "role": "value", "index": 1 }
+        ]
+      }
+    ],
+    "classDefineRules": [
+      {
+        "function": "DefineClass",
+        "params": [
+          { "role": "name", "index": 0 },
+          { "role": "super", "index": 1 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Defaults:
+
+- `globalDefineRules` defaults to a `registerGlobal` rule with
+  `name = 0, value = 1`.
+- `classDefineRules` defaults to `DefineClass` / `DefineComponent` rules with
+  `name = 0, super = 1`.
 
 ### workspace
 

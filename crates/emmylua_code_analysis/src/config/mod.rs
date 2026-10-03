@@ -11,9 +11,10 @@ pub use configs::{
     DiagnosticSeveritySetting, DocSyntax, EmmyLibraryConfig, EmmyLibraryItem, EmmyrcCodeAction,
     EmmyrcCodeLens, EmmyrcCompletion, EmmyrcDiagnostic, EmmyrcDoc, EmmyrcDocumentColor,
     EmmyrcExternalTool, EmmyrcFilenameConvention, EmmyrcHover, EmmyrcInlayHint, EmmyrcInlineValues,
-    EmmyrcLuaVersion, EmmyrcReference, EmmyrcReformat, EmmyrcResource, EmmyrcRuntime,
-    EmmyrcSemanticToken, EmmyrcSignature, EmmyrcStrict, EmmyrcWorkspace, EmmyrcWorkspaceModuleMap,
-    EmmyrcWorkspacePathConfig, EmmyrcWorkspacePathItem,
+    EmmyrcLuaVersion, EmmyrcParamRole, EmmyrcParameterRule, EmmyrcReference, EmmyrcReformat,
+    EmmyrcResource, EmmyrcRuntime, EmmyrcSemanticToken, EmmyrcSignature, EmmyrcSpecialCallRule,
+    EmmyrcStrict, EmmyrcWorkspace, EmmyrcWorkspaceModuleMap, EmmyrcWorkspacePathConfig,
+    EmmyrcWorkspacePathItem,
 };
 use emmylua_parser::{LuaFeaturesSet, LuaLanguageLevel, ParserConfig, SpecialFunction};
 use rowan::NodeCache;

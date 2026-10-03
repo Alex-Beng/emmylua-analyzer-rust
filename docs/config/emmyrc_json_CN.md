@@ -178,7 +178,10 @@ EmmyLua Analyzer Rust 推荐把配置写在项目根目录的 `.emmyrc.json` 中
     "extensions": [],
     "requirePattern": [],
     "nonstandardSymbol": [],
-    "special": {}
+    "special": {},
+    "environmentModulePattern": [],
+    "globalDefineRules": [],
+    "classDefineRules": []
   },
   "semanticTokens": {
     "enable": true,
@@ -364,6 +367,9 @@ EmmyLua Analyzer Rust 推荐把配置写在项目根目录的 `.emmyrc.json` 中
 | `requirePattern` | `string[]` | `[]` | require 搜索模式，例如 `?.lua`、`?/init.lua` |
 | `nonstandardSymbol` | `string[]` | `[]` | 允许的非标准语法符号 |
 | `special` | `object` | `{}` | 特殊函数映射 |
+| `environmentModulePattern` | `string[]` | `[]` | 命中这些 glob 且顶层无 `return` 的文件，其顶层全局变量将被合成为模块导出表 |
+| `globalDefineRules` | `object[]` | `registerGlobal` 规则 | 运行时注册全局变量的函数规则 |
+| `classDefineRules` | `object[]` | `DefineClass`/`DefineComponent` 规则 | 运行时定义类的函数规则 |
 
 `nonstandardSymbol` 支持的值：
 
@@ -388,6 +394,56 @@ EmmyLua Analyzer Rust 推荐把配置写在项目根目录的 `.emmyrc.json` 中
 - `continue`
 
 `special` 支持的值：`none`、`require`、`error`、`assert`、`type`、`setmetatable`。
+
+#### 框架调用规则
+
+许多框架会把 `require`、全局注册或类定义包装成自定义函数。通过
+`requireLikeFunction`、`globalDefineRules`、`classDefineRules` 和
+`environmentModulePattern`，可以让分析器理解这些约定，而无需修改用户代码。
+
+- `requireLikeFunction`：视为 `require` 的函数名，例如 `import`、`kg_require`。
+- `environmentModulePattern`：命中这些 glob 且**顶层没有 `return`** 的文件，
+  其所有顶层全局变量都会被合成为模块导出表。这对应"在隔离环境中执行模块并
+  返回该环境表"的加载器。
+- `globalDefineRules`：运行时注册全局变量的函数，每条规则把位置参数映射到
+  角色（`name`、`value`）。
+- `classDefineRules`：运行时定义类的函数，每条规则把位置参数映射到角色
+  （`name`、`super`）。
+
+`params` 是 `{ "role": <role>, "index": <n> }` 列表，`role` 取 `name`、
+`value`、`super`，`index` 为从 0 开始的参数位置。不同项目的参数顺序可能不同。
+
+```json
+{
+  "runtime": {
+    "requireLikeFunction": ["import", "kg_require"],
+    "environmentModulePattern": ["Common/battle_core/**"],
+    "globalDefineRules": [
+      {
+        "function": "registerGlobal",
+        "params": [
+          { "role": "name", "index": 0 },
+          { "role": "value", "index": 1 }
+        ]
+      }
+    ],
+    "classDefineRules": [
+      {
+        "function": "DefineClass",
+        "params": [
+          { "role": "name", "index": 0 },
+          { "role": "super", "index": 1 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+默认值：
+
+- `globalDefineRules` 默认一条 `registerGlobal` 规则，`name = 0, value = 1`。
+- `classDefineRules` 默认 `DefineClass` / `DefineComponent` 规则，`name = 0, super = 1`。
 
 ### workspace
 
