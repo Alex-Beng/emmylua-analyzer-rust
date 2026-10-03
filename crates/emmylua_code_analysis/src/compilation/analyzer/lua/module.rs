@@ -1,9 +1,14 @@
 use emmylua_parser::{LuaAstNode, LuaChunk, LuaExpr};
+use flagset::FlagSet;
 use wax::Pattern;
 
 use crate::{
-    InferFailReason, LuaDecl, LuaDeclId, LuaMemberKey, LuaSemanticDeclId, LuaSignatureId, LuaType,
-    compilation::analyzer::unresolve::UnResolveModule, db_index::LuaObjectType, infer_expr,
+    InferFailReason, LuaDecl, LuaDeclId, LuaMember, LuaMemberFeature, LuaMemberId, LuaMemberKey,
+    LuaMemberOwner, LuaSemanticDeclId, LuaSignatureId, LuaType, LuaTypeCache, LuaTypeDecl,
+    LuaTypeDeclId,
+    compilation::analyzer::unresolve::UnResolveModule,
+    db_index::LuaDeclTypeKind,
+    infer_expr,
 };
 
 use super::{LuaAnalyzer, LuaReturnPoint, analyze_func_body_returns_with};
@@ -65,9 +70,12 @@ pub fn analyze_chunk_return(analyzer: &mut LuaAnalyzer, chunk: LuaChunk) -> Opti
 
 /// For files matched by `runtime.environment_module_pattern` that expose their
 /// module members through top-level global assignments (eg. `BATTLE_STATE_INIT = 1`
-/// or `function Foo:bar() end`), synthesize a table type whose fields are those
+/// or `function Foo:bar() end`), synthesize a class type whose members are those
 /// globals. This mirrors runtime loaders that execute a module in an isolated
 /// environment and return that environment table.
+///
+/// Using a real `LuaTypeDecl` (instead of a plain `LuaObjectType`) registers the
+/// module members in the member index, so both hover and go-to-definition work.
 fn analyze_environment_module_exports(analyzer: &mut LuaAnalyzer) {
     let file_id = analyzer.file_id;
 
@@ -85,42 +93,77 @@ fn analyze_environment_module_exports(analyzer: &mut LuaAnalyzer) {
         return;
     }
 
-    let decl_ids = {
+    let decls = {
         let Some(tree) = analyzer.db.get_decl_index().get_decl_tree(&file_id) else {
             return;
         };
         tree.get_decls()
             .values()
             .filter(|decl| decl.is_global())
-            .map(|decl| decl.get_id())
+            .cloned()
             .collect::<Vec<_>>()
     };
 
-    if decl_ids.is_empty() {
+    if decls.is_empty() {
         return;
     }
 
-    let mut fields = Vec::new();
-    for decl_id in decl_ids {
-        let Some(decl) = analyzer.db.get_decl_index().get_decl(&decl_id).cloned() else {
-            continue;
-        };
+    // Synthesize a file-scoped class for this module's export surface.
+    // A file-scoped id avoids polluting the global namespace and prevents
+    // conflicts with user-defined classes.
+    let export_name = format!("@module:{}", file_id.id);
+    let type_id = LuaTypeDeclId::file(file_id, &export_name);
+    let decl_range = {
+        let chunk = analyzer
+            .db
+            .get_vfs()
+            .get_syntax_tree(&file_id)
+            .map(|tree| tree.get_chunk_node().get_range())
+            .unwrap_or_default();
+        chunk
+    };
+    analyzer.db.get_type_index_mut().add_type_decl(
+        file_id,
+        LuaTypeDecl::new(
+            file_id,
+            decl_range,
+            export_name,
+            LuaDeclTypeKind::Class,
+            FlagSet::default(),
+            type_id.clone(),
+        ),
+    );
+
+    let owner = LuaMemberOwner::Type(type_id.clone());
+
+    let mut member_count = 0usize;
+    for decl in &decls {
         let name = decl.get_name().to_string();
-        let field_type = infer_global_decl_type(analyzer, &decl);
-        fields.push((LuaMemberKey::Name(name.into()), field_type));
+        let field_type = infer_global_decl_type(analyzer, decl);
+
+        // Register the global as a member of the synthesized class so that
+        // go-to-definition can resolve back to the global's declaration.
+        let syntax_id = decl.get_syntax_id();
+        let member_id = LuaMemberId::new(syntax_id, file_id);
+        let key = LuaMemberKey::Name(name.into());
+        analyzer.db.get_type_index_mut().bind_type(
+            member_id.into(),
+            LuaTypeCache::InferType(field_type.clone()),
+        );
+        analyzer.db.get_member_index_mut().add_member(
+            owner.clone(),
+            LuaMember::new(member_id, key, LuaMemberFeature::FileDefine, None),
+        );
+
+        member_count += 1;
     }
 
-    if fields.is_empty() {
+    if member_count == 0 {
         return;
     }
 
-    let object = LuaObjectType::new_with_fields(fields.into_iter().collect(), Vec::new());
-    if let Some(module_info) = analyzer
-        .db
-        .get_module_index_mut()
-        .get_module_mut(file_id)
-    {
-        module_info.export_type = Some(LuaType::Object(object.into()));
+    if let Some(module_info) = analyzer.db.get_module_index_mut().get_module_mut(file_id) {
+        module_info.export_type = Some(LuaType::Def(type_id));
     }
 }
 

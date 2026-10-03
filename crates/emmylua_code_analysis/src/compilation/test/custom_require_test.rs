@@ -114,6 +114,65 @@ mod test {
     }
 
     #[test]
+    fn test_environment_module_member_has_definition_location() {
+        use crate::{LuaMemberKey, LuaMemberOwner, LuaType, LuaTypeDeclId};
+
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+        ws.update_emmyrc(emmyrc_with_environment_module());
+
+        let module_file = ws.def_file(
+            "Common/battle_core/common/battle_const.lua",
+            r#"
+                BATTLE_STATE_INIT = 1
+                BATTLE_STATE_START = 4
+                "#,
+        );
+
+        // The module export type is a synthesized file-scoped class.
+        let export_type = ws
+            .analysis
+            .compilation
+            .get_db()
+            .get_module_index()
+            .get_module(module_file)
+            .and_then(|m| m.export_type.clone())
+            .expect("module should have synthesized export");
+        let LuaType::Def(type_id) = export_type else {
+            panic!("expected Def export type, got {export_type:?}");
+        };
+        assert!(
+            matches!(type_id.get_id(), crate::LuaTypeIdentifier::File(_, _)),
+            "synthesized type should be file-scoped, got {type_id:?}"
+        );
+
+        // The member must be registered under the synthesized class owner,
+        // pointing at the global's declaration in the module file.
+        let db = ws.analysis.compilation.get_db();
+        let member_index = db.get_member_index();
+        let owner = LuaMemberOwner::Type(LuaTypeDeclId::file(
+            module_file,
+            type_id.get_name(),
+        ));
+        let key = LuaMemberKey::Name("BATTLE_STATE_INIT".into());
+        let member = member_index
+            .get_member_item(&owner, &key)
+            .and_then(|_| member_index.get_members(&owner))
+            .and_then(|members| {
+                members
+                    .iter()
+                    .find(|m| m.get_key() == &key)
+                    .map(|m| m.get_id())
+            })
+            .expect("BATTLE_STATE_INIT member must be registered");
+
+        let location_file = member.file_id;
+        assert_eq!(
+            location_file, module_file,
+            "member definition must point into the module file"
+        );
+    }
+
+    #[test]
     fn test_non_matching_module_has_no_synthesized_export() {
         let mut ws = VirtualWorkspace::new_with_init_std_lib();
         ws.update_emmyrc(emmyrc_with_environment_module());

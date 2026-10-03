@@ -136,15 +136,21 @@
 - `config/configs/mod.rs`、`config/mod.rs`：导出新类型。
 - `compilation/analyzer/lua/module.rs`：新增
   `analyze_environment_module_exports`，对匹配 glob 且无 `return` 的文件，
-  用顶层全局合成 `LuaObjectType` 作为 `export_type`（比原计划直接用
-  `LuaTypeDecl` 更简单，且 `Object` 的成员查找/枚举天然可用）。
+  用顶层全局合成模块导出。
+  - **修订（v2）**：从 `LuaObjectType` 改为**合成的文件作用域 `LuaTypeDecl`(Class)
+    + 成员注册**。因为 `Object` 字段只有类型、没有 `LuaMemberId`/源码位置，
+    hover 可用但**无法跳转到定义**。现在每个顶层全局都注册为
+    `LuaMemberOwner::Type(file-scoped id)` 的成员，`member_id` 指向该全局声明，
+    故 Go to Definition 可精确跳到模块文件内的定义行。
+  - 类名用 `LuaTypeDeclId::file(file_id, "@module:{id}")`（文件作用域），
+    避免污染全局命名空间与用户类名冲突。
 - `compilation/analyzer/decl/special_call.rs`（新增）：解析配置规则、匹配调用、
   合成全局 / 类声明。
 - `compilation/analyzer/decl/exprs.rs`：在 `analyze_call_expr` 里接入
   `analyze_special_call_decl`。
 - `compilation/analyzer/lua/call.rs`：新增 `analyze_special_call`，绑定全局值类型、
   注册类的父类型。
-- `compilation/test/custom_require_test.rs`（新增）：9 个测试覆盖 T2–T5。
+- `compilation/test/custom_require_test.rs`（新增）：10 个测试覆盖 T2–T5 及成员定位。
 - 文档与 schema 更新。
 
 已知限制 / 后续可优化：
