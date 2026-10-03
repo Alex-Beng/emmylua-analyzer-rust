@@ -146,12 +146,40 @@
     避免污染全局命名空间与用户类名冲突。
 - `compilation/analyzer/decl/special_call.rs`（新增）：解析配置规则、匹配调用、
   合成全局 / 类声明。
+  - **修订（v3）**：合成的类设置 `LuaTypeFlag::Open`，且 P1 修复了 flag 与 id
+    一致性；对象/类成员访问对动态括号键与 `nil` 占位成员回退 `any`。
+- `db_index/type/type_decl.rs`：`LuaTypeFlag` 底层类型 `u8`→`u16`，新增 `Open`；
+  新增 `LuaTypeDecl::is_open()`。
+- `semantic/infer/infer_index/mod.rs`：`infer_custom_type_member` 对 open 类型：
+  - 括号键（`obj[...]`）访问已存在成员时返回 `any`（运行时可能缺失）；
+  - 命中成员类型为 `nil` 时返回 `any`（占位赋值）；
+  - 未命中成员返回 `any`（不回退报错）。
+- `compilation/analyzer/lua/module.rs`、`lua/call.rs`：合成类型的成员/全局值类型
+  用 `widen_literal_type` 宽化字面量（`1`→`integer` 等），避免常量折叠误报。
 - `compilation/analyzer/decl/exprs.rs`：在 `analyze_call_expr` 里接入
   `analyze_special_call_decl`。
 - `compilation/analyzer/lua/call.rs`：新增 `analyze_special_call`，绑定全局值类型、
   注册类的父类型。
-- `compilation/test/custom_require_test.rs`（新增）：10 个测试覆盖 T2–T5 及成员定位。
+- `compilation/test/custom_require_test.rs`（新增）：13 个测试覆盖 T2–T5、成员定位、
+  开放兜底、flag 一致性。
 - 文档与 schema 更新。
+
+### v3 诊断对比（ON vs OFF，真实项目 `uptodate_server/script`）
+
+修复前启用功能会导致 `undefined-field` 252→2630 等大量误报；修复后：
+
+| 诊断 | OFF | ON |
+| --- | --- | --- |
+| inconsistent-type-access-modifier | 0 | 0 |
+| undefined-field | 252 | 146 |
+| unnecessary-if | 460 | 413 |
+| call-non-callable | 616 | 387 |
+| need-check-nil | 982 | 347 |
+| assign-type-mismatch | 178 | 187 |
+
+绝大多数诊断低于基线，仅 `duplicate-type`(+9)、`return-type-mismatch`(+16) 等少量
+新增，多为真实存在的重复类/类型问题。
+
 
 已知限制 / 后续可优化：
 

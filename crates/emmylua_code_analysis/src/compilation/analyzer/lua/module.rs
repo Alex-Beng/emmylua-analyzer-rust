@@ -1,5 +1,4 @@
 use emmylua_parser::{LuaAstNode, LuaChunk, LuaExpr};
-use flagset::FlagSet;
 use wax::Pattern;
 
 use crate::{
@@ -7,7 +6,7 @@ use crate::{
     LuaMemberOwner, LuaSemanticDeclId, LuaSignatureId, LuaType, LuaTypeCache, LuaTypeDecl,
     LuaTypeDeclId,
     compilation::analyzer::unresolve::UnResolveModule,
-    db_index::LuaDeclTypeKind,
+    db_index::{LuaDeclTypeKind, LuaTypeFlag},
     infer_expr,
 };
 
@@ -129,7 +128,7 @@ fn analyze_environment_module_exports(analyzer: &mut LuaAnalyzer) {
             decl_range,
             export_name,
             LuaDeclTypeKind::Class,
-            FlagSet::default(),
+            LuaTypeFlag::File | LuaTypeFlag::Open,
             type_id.clone(),
         ),
     );
@@ -169,23 +168,32 @@ fn analyze_environment_module_exports(analyzer: &mut LuaAnalyzer) {
 
 /// Infer the type of a top-level global declaration, preferring the type already
 /// bound during declaration analysis and falling back to the value expression.
+///
+/// Literal types are widened (`1` -> `integer`, `"x"` -> `string`, ...). Module
+/// exports are runtime values that can be assigned to freely, so keeping the
+/// literal would make downstream checks (eg. always-truthy conditions and
+/// assign-type-mismatch) fire spuriously.
 fn infer_global_decl_type(analyzer: &mut LuaAnalyzer, decl: &LuaDecl) -> LuaType {
     let decl_id = decl.get_id();
     if let Some(type_cache) = analyzer.db.get_type_index().get_type_cache(&decl_id.into()) {
         let ty = type_cache.as_type().clone();
         if !ty.is_unknown() {
-            return ty;
+            return widen_type(ty);
         }
     }
 
     // Fall back to the bound value expression, if any.
     if let Some(value_syntax_id) = decl.get_value_syntax_id() {
         if let Some(expr) = find_expr_by_syntax_id(analyzer, value_syntax_id) {
-            return analyzer.infer_expr(&expr).unwrap_or(LuaType::Unknown);
+            return widen_type(analyzer.infer_expr(&expr).unwrap_or(LuaType::Unknown));
         }
     }
 
     LuaType::Unknown
+}
+
+fn widen_type(ty: LuaType) -> LuaType {
+    crate::widen_literal_type(ty)
 }
 
 fn find_expr_by_syntax_id(

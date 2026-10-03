@@ -173,6 +173,112 @@ mod test {
     }
 
     #[test]
+    fn test_environment_module_unknown_member_falls_back_to_any() {
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+        ws.update_emmyrc(emmyrc_with_environment_module());
+
+        ws.def_files(vec![(
+            "Common/battle_core/common/battle_const.lua",
+            r#"
+                BATTLE_STATE_INIT = 1
+                "#,
+        )]);
+
+        // A member that is not a top-level global (eg. defined at runtime)
+        // should resolve to `any` instead of reporting a missing field.
+        let ty = ws.expr_ty(
+            r#"import("Common/battle_core/common/battle_const").SOME_RUNTIME_MEMBER"#,
+        );
+        assert!(
+            matches!(ty, LuaType::Any),
+            "unknown module member should fall back to any, got {:?}",
+            ty
+        );
+
+        // `undefined-field` should not fire for open module types.
+        let mut ws2 = VirtualWorkspace::new_with_init_std_lib();
+        ws2.update_emmyrc(emmyrc_with_environment_module());
+        ws2.def_files(vec![(
+            "Common/battle_core/common/battle_const.lua",
+            r#"
+                BATTLE_STATE_INIT = 1
+                "#,
+        )]);
+        assert!(
+            ws2.has_no_diagnostic(
+                crate::DiagnosticCode::UndefinedField,
+                r#"local x = import("Common/battle_core/common/battle_const").SOME_RUNTIME_MEMBER"#,
+            ),
+            "undefined-field should not fire for open module exports"
+        );
+    }
+
+    #[test]
+    fn test_environment_module_type_flags_are_consistent() {
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+        ws.update_emmyrc(emmyrc_with_environment_module());
+
+        let module_file = ws.def_file(
+            "Common/battle_core/common/battle_const.lua",
+            r#"
+                BATTLE_STATE_INIT = 1
+                "#,
+        );
+
+        let db = ws.analysis.compilation.get_db();
+        let type_id = db
+            .get_module_index()
+            .get_module(module_file)
+            .and_then(|m| m.export_type.clone())
+            .and_then(|t| match t {
+                LuaType::Def(id) => Some(id),
+                _ => None,
+            })
+            .expect("synthesized export type");
+        let type_decl = db
+            .get_type_index()
+            .get_type_decl(&type_id)
+            .expect("type decl must exist");
+        assert!(type_decl.is_open(), "module export type should be open");
+    }
+
+    #[test]
+    fn test_environment_module_index_member_not_always_truthy() {
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+        ws.update_emmyrc(emmyrc_with_environment_module());
+
+        ws.def_files(vec![
+            (
+                "Common/battle_core/common/formula.lua",
+                r#"
+                    skillFormula101 = function(a, b) return a + b end
+                    "#,
+            ),
+            (
+                "virtual_use.lua",
+                r#"
+                    local funcName = "skillFormula101"
+                    local func = import("Common/battle_core/common/formula")[funcName]
+                    if func then
+                        return func(1, 2)
+                    end
+                    "#,
+            ),
+        ]);
+
+        // `func` comes from an open module export indexed by a dynamic key,
+        // so it must not be treated as always-truthy.
+        let ty = ws.expr_ty(
+            r#"local fname = "skillFormula101" local x = import("Common/battle_core/common/formula")[fname] x"#,
+        );
+        assert!(
+            !ty.is_always_truthy(),
+            "dynamic module member should not be always-truthy, got {:?}",
+            ty
+        );
+    }
+
+    #[test]
     fn test_non_matching_module_has_no_synthesized_export() {
         let mut ws = VirtualWorkspace::new_with_init_std_lib();
         ws.update_emmyrc(emmyrc_with_environment_module());

@@ -156,6 +156,9 @@ fn bind_global_define(
 
     let value_type = analyzer.infer_expr(&value_expr).unwrap_or(LuaType::Unknown);
     let value_type = value_type.get_result_slot_type(0).unwrap_or(value_type);
+    // Widen literals: registered globals are runtime values, so keeping the
+    // literal type would cause spurious downstream conditions/assign checks.
+    let value_type = crate::widen_literal_type(value_type);
 
     let range = call_expr.syntax().text_range();
     if let Some(decl_id) = find_synthetic_global_decl(analyzer, &name, range) {

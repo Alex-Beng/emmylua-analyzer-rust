@@ -1,11 +1,9 @@
 use emmylua_parser::{LuaCallExpr, LuaExpr, LuaLiteralToken, LuaSyntaxKind};
 
-use flagset::FlagSet;
-
 use crate::{
     LuaTypeDeclId,
     config::{EmmyrcParamRole, EmmyrcSpecialCallRule},
-    db_index::{LuaDecl, LuaDeclExtra, LuaDeclTypeKind, LuaTypeDecl},
+    db_index::{LuaDecl, LuaDeclExtra, LuaDeclTypeKind, LuaTypeDecl, LuaTypeFlag},
 };
 
 use super::DeclAnalyzer;
@@ -141,7 +139,9 @@ pub fn add_synthetic_class_decl(
         range,
         name.to_string(),
         LuaDeclTypeKind::Class,
-        FlagSet::default(),
+        // `Open` lets members that are attached at runtime (via `Name:method`)
+        // resolve as `any` instead of reporting a missing field.
+        LuaTypeFlag::Open.into(),
         type_id.clone(),
     );
     analyzer

@@ -21,7 +21,7 @@ pub enum LuaDeclTypeKind {
 }
 
 flags! {
-    pub enum LuaTypeFlag: u8 {
+    pub enum LuaTypeFlag: u16 {
         Key,
         Partial,
         Exact,
@@ -29,7 +29,8 @@ flags! {
         Constructor,
         Public,
         Internal,
-        File
+        File,
+        Open
     }
 }
 
@@ -95,6 +96,16 @@ impl LuaTypeDecl {
         self.locations
             .iter()
             .any(|l| l.flag.contains(LuaTypeFlag::Exact))
+    }
+
+    /// Whether the type has an open member surface. For open types, member
+    /// lookup falls back to `any` when a member is not explicitly declared.
+    /// This is used for synthesized module-export classes whose runtime
+    /// environment may expose members not statically visible.
+    pub fn is_open(&self) -> bool {
+        self.locations
+            .iter()
+            .any(|l| l.flag.contains(LuaTypeFlag::Open))
     }
 
     pub fn is_partial(&self) -> bool {

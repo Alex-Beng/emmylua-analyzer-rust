@@ -424,7 +424,17 @@ fn infer_custom_type_member(
 
     let owner = LuaMemberOwner::Type(prefix_type_id.clone());
     if let Some(member_item) = db.get_member_index().get_member_item(&owner, &lookup.key) {
-        return member_item.resolve_type(db);
+        let member_type = member_item.resolve_type(db)?;
+        // Open types (eg. synthesized module-export tables and runtime-defined
+        // classes) are dynamic: a declared member may be a placeholder (`nil`)
+        // or assigned at runtime. Treat such members as `any` for bracket
+        // access so we don't emit spurious callability / nil-check noise.
+        if type_decl.is_open()
+            && (is_bracket_index_access(lookup) || member_type.is_nil())
+        {
+            return Ok(LuaType::Any);
+        }
+        return Ok(member_type);
     }
 
     // Exact keys may still resolve through super types below; only broad keys need key-type matching here.
@@ -450,7 +460,26 @@ fn infer_custom_type_member(
         }
     }
 
+    // Open types (eg. synthesized module-export classes) expose an unknown
+    // member surface, so fall back to `any` instead of reporting a missing
+    // field. Explicit members above still take precedence.
+    if type_decl.is_open() {
+        return Ok(LuaType::Any);
+    }
+
     Err(InferFailReason::FieldNotFound)
+}
+
+/// Whether the member lookup used an explicit `obj[...]` bracket access rather
+/// than `obj.name`.
+fn is_bracket_index_access(lookup: &MemberLookupQuery) -> bool {
+    match &lookup.index_expr {
+        LuaIndexMemberExpr::IndexExpr(index_expr) => matches!(
+            index_expr.get_index_key(),
+            Some(LuaIndexKey::String(_)) | Some(LuaIndexKey::Expr(_))
+        ),
+        LuaIndexMemberExpr::TableField(_) => false,
+    }
 }
 
 fn infer_type_key_member_type(
