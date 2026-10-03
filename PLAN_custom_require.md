@@ -225,6 +225,29 @@
 `dot_d_lua_files_are_ignored_by_default`；LS 层
 `real_definition_probe_test` 覆盖增量编辑/诊断后仍可跳转。
 
+### v6 功能：`runtime.classFieldTypeRules`（实例字段类型声明）
+
+**需求**：`self.battle`/`self.warrior` 等常用字段由未标注的构造参数赋值，
+类型退化为 `any`。希望在 LS 侧按类名声明字段类型。
+
+**实现**：
+- `config/configs/runtime.rs` 新增 `EmmyrcClassFieldTypeRule`（`class` +
+  `fields`）与 `EmmyrcFieldTypeRule`（`name` / `type` / `optional`，后者默认
+  `true`）；`runtime.classFieldTypeRules`。
+- `lua/call.rs::inject_class_field_types`：在 `bind_class_define` 中，对匹配类名的
+  规则注入字段成员：类型 = `Ref(global(type))`（`optional` 时并 `nil`），
+  以 `LuaMemberFeature::MetaFieldDecl` 挂到 `Type(class_id)`。meta 特征在
+  `strict.meta_override_file_define`（默认 true）下**覆盖** `self.x = ...` 推断出的
+  `FileDefine` 类型。合成成员 id 使用 `DefineClass` 调用 range + 字段索引保证唯一。
+- 同类重名字段**后者覆盖前者**（收集所有匹配规则后按名去重）。
+
+**注意（可空性的代价）**：`optional: true` 会让 `self.battle:foo()` 触发
+`need-check-nil`（真实项目实测 `need-check-nil` +1186）。项目 `.emmyrc.json` 中
+这些字段显式设 `"optional": false`（非空，仅 +25）。可按需改回可空。
+
+测试：配置反序列化、注入/可空/不可空、重名覆盖（`custom_require_test.rs`）。
+文档（CN/EN）与 schema 同步更新。
+
 
 已知限制 / 后续可优化：
 

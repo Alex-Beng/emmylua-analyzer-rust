@@ -8,13 +8,13 @@ use std::{collections::HashMap, path::Path};
 
 pub use config_loader::{load_configs, load_configs_raw};
 pub use configs::{
-    DiagnosticSeveritySetting, DocSyntax, EmmyLibraryConfig, EmmyLibraryItem, EmmyrcCodeAction,
-    EmmyrcCodeLens, EmmyrcCompletion, EmmyrcDiagnostic, EmmyrcDoc, EmmyrcDocumentColor,
-    EmmyrcExternalTool, EmmyrcFilenameConvention, EmmyrcHover, EmmyrcInlayHint, EmmyrcInlineValues,
-    EmmyrcLuaVersion, EmmyrcParamRole, EmmyrcParameterRule, EmmyrcReference, EmmyrcReformat,
-    EmmyrcResource, EmmyrcRuntime, EmmyrcSemanticToken, EmmyrcSignature, EmmyrcSpecialCallRule,
-    EmmyrcStrict, EmmyrcWorkspace, EmmyrcWorkspaceModuleMap, EmmyrcWorkspacePathConfig,
-    EmmyrcWorkspacePathItem,
+    DiagnosticSeveritySetting, DocSyntax, EmmyLibraryConfig, EmmyLibraryItem,
+    EmmyrcClassFieldTypeRule, EmmyrcCodeAction, EmmyrcCodeLens, EmmyrcCompletion, EmmyrcDiagnostic,
+    EmmyrcDoc, EmmyrcDocumentColor, EmmyrcExternalTool, EmmyrcFieldTypeRule, EmmyrcFilenameConvention,
+    EmmyrcHover, EmmyrcInlayHint, EmmyrcInlineValues, EmmyrcLuaVersion, EmmyrcParamRole,
+    EmmyrcParameterRule, EmmyrcReference, EmmyrcReformat, EmmyrcResource, EmmyrcRuntime,
+    EmmyrcSemanticToken, EmmyrcSignature, EmmyrcSpecialCallRule, EmmyrcStrict, EmmyrcWorkspace,
+    EmmyrcWorkspaceModuleMap, EmmyrcWorkspacePathConfig, EmmyrcWorkspacePathItem,
 };
 use emmylua_parser::{LuaFeaturesSet, LuaLanguageLevel, ParserConfig, SpecialFunction};
 use rowan::NodeCache;

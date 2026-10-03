@@ -1,7 +1,9 @@
-use emmylua_parser::{LuaAstNode, LuaCallExpr, LuaExpr};
+use emmylua_parser::{LuaAstNode, LuaCallExpr, LuaExpr, LuaSyntaxId, LuaSyntaxKind};
+use rowan::TextRange;
 
 use crate::{
-    InferFailReason, LuaBuiltinAttributeKind, LuaType, LuaTypeCache, LuaTypeDeclId,
+    InferFailReason, LuaBuiltinAttributeKind, LuaMember, LuaMemberFeature, LuaMemberId,
+    LuaMemberKey, LuaMemberOwner, LuaType, LuaTypeCache, LuaTypeDeclId, TypeOps,
     compilation::analyzer::{
         lua::LuaAnalyzer,
         unresolve::{UnResolveCall, UnResolveConstructor, UnResolveDecl, UnResolveSuperType},
@@ -106,7 +108,7 @@ fn get_string_arg(args: &[LuaExpr], index: usize) -> Option<String> {
 fn find_synthetic_global_decl(
     analyzer: &LuaAnalyzer,
     name: &str,
-    range: rowan::TextRange,
+    range: TextRange,
 ) -> Option<crate::LuaDeclId> {
     let file_id = analyzer.file_id;
     let decl_ids = analyzer.db.get_global_index().get_global_decl_ids(name)?;
@@ -246,5 +248,66 @@ fn bind_class_define(
                 }
             }
         }
+    }
+
+    // Inject configured instance field types for this class.
+    inject_class_field_types(analyzer, call_expr, &name, &type_id);
+}
+
+/// Inject types for common instance fields declared via
+/// `runtime.classFieldTypeRules`. The injected members use
+/// `LuaMemberFeature::MetaFieldDecl`, so they override the types otherwise
+/// inferred from `self.field = ...` assignments (which often degrade to `any`).
+fn inject_class_field_types(
+    analyzer: &mut LuaAnalyzer,
+    call_expr: &LuaCallExpr,
+    class_name: &str,
+    type_id: &LuaTypeDeclId,
+) {
+    let rules = analyzer.get_emmyrc().runtime.class_field_type_rules.clone();
+
+    // Collect all fields for this class across rules; a later declaration of the
+    // same field name overrides an earlier one.
+    let mut fields: Vec<crate::EmmyrcFieldTypeRule> = Vec::new();
+    for rule in rules.iter().filter(|r| r.class == class_name) {
+        for field in &rule.fields {
+            if field.name.is_empty() || field.r#type.is_empty() {
+                continue;
+            }
+            if let Some(pos) = fields.iter().position(|f| f.name == field.name) {
+                fields.remove(pos);
+            }
+            fields.push(field.clone());
+        }
+    }
+    if fields.is_empty() {
+        return;
+    }
+
+    let base = call_expr.syntax().text_range().start();
+    let owner = LuaMemberOwner::Type(type_id.clone());
+    for (idx, field) in fields.iter().enumerate() {
+        let target_id = LuaTypeDeclId::global(&field.r#type);
+        let mut field_type = LuaType::Ref(target_id);
+        if field.optional {
+            field_type = TypeOps::Union.apply(analyzer.db, &field_type, &LuaType::Nil);
+        }
+
+        // Synthesize a unique member id per field (each gets a distinct range).
+        let start = base + rowan::TextSize::from(idx as u32);
+        let range = TextRange::new(start, start + rowan::TextSize::from(1));
+        let syntax_id = LuaSyntaxId::new(LuaSyntaxKind::NameExpr.into(), range);
+        let member_id = LuaMemberId::new(syntax_id, analyzer.file_id);
+
+        let key = LuaMemberKey::Name(field.name.as_str().into());
+        let member = LuaMember::new(member_id, key, LuaMemberFeature::MetaFieldDecl, None);
+        analyzer
+            .db
+            .get_member_index_mut()
+            .add_member(owner.clone(), member);
+        analyzer.db.get_type_index_mut().bind_type(
+            member_id.into(),
+            LuaTypeCache::DocType(field_type),
+        );
     }
 }

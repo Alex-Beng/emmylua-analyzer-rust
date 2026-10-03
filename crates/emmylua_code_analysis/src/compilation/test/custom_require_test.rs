@@ -591,4 +591,130 @@ mod test {
             ty
         );
     }
+
+    #[test]
+    fn test_class_field_type_rules_inject_member_types() {
+        use crate::{EmmyrcClassFieldTypeRule, EmmyrcFieldTypeRule};
+
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+        let mut emmyrc = Emmyrc::default();
+        emmyrc.runtime.class_field_type_rules = vec![EmmyrcClassFieldTypeRule {
+            class: "BattleBt".to_string(),
+            fields: vec![
+                EmmyrcFieldTypeRule {
+                    name: "battle".to_string(),
+                    r#type: "BattleCore".to_string(),
+                    optional: true,
+                },
+                EmmyrcFieldTypeRule {
+                    name: "warrior".to_string(),
+                    r#type: "BattleWarrior".to_string(),
+                    optional: false,
+                },
+            ],
+        }];
+        ws.update_emmyrc(emmyrc);
+
+        ws.def(
+            r#"
+            DefineClass("BattleCore")
+            function BattleCore:start() end
+
+            DefineClass("BattleWarrior")
+            function BattleWarrior:getId() end
+
+            DefineClass("BattleBt")
+            function BattleBt:ctor(battle)
+                self.battle = nil
+            end
+            "#,
+        );
+
+        let nil = ws.ty("nil");
+        let battle_core = ws.ty("BattleCore");
+        let battle_warrior = ws.ty("BattleWarrior");
+
+        // Optional field: `BattleCore | nil`.
+        let battle_ty = ws.expr_ty("BattleBt.battle");
+        assert!(
+            ws.check_type(&battle_ty, &battle_core),
+            "battle should be assignable to BattleCore, got {:?}",
+            battle_ty
+        );
+        assert!(
+            ws.check_type(&battle_ty, &nil),
+            "optional battle should be nullable, got {:?}",
+            battle_ty
+        );
+
+        // Non-optional field: strong `BattleWarrior` (not nil).
+        let warrior_ty = ws.expr_ty("BattleBt.warrior");
+        assert!(
+            ws.check_type(&warrior_ty, &battle_warrior),
+            "warrior should be BattleWarrior, got {:?}",
+            warrior_ty
+        );
+        assert!(
+            !ws.check_type(&warrior_ty, &nil),
+            "non-optional warrior should not be nullable, got {:?}",
+            warrior_ty
+        );
+
+        // Injected member resolves methods on the target class.
+        let start_ty = ws.expr_ty("BattleBt.battle.start");
+        assert!(
+            !matches!(start_ty, LuaType::Unknown | LuaType::Any),
+            "battle.start should resolve on the injected type, got {:?}",
+            start_ty
+        );
+    }
+
+    #[test]
+    fn test_class_field_type_rules_duplicate_name_last_wins() {
+        use crate::{EmmyrcClassFieldTypeRule, EmmyrcFieldTypeRule};
+
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+        let mut emmyrc = Emmyrc::default();
+        emmyrc.runtime.class_field_type_rules = vec![
+            EmmyrcClassFieldTypeRule {
+                class: "BattleBt".to_string(),
+                fields: vec![EmmyrcFieldTypeRule {
+                    name: "battle".to_string(),
+                    r#type: "BattleCore".to_string(),
+                    optional: false,
+                }],
+            },
+            EmmyrcClassFieldTypeRule {
+                class: "BattleBt".to_string(),
+                fields: vec![EmmyrcFieldTypeRule {
+                    name: "battle".to_string(),
+                    r#type: "BattleWarrior".to_string(),
+                    optional: false,
+                }],
+            },
+        ];
+        ws.update_emmyrc(emmyrc);
+
+        ws.def(
+            r#"
+            DefineClass("BattleCore")
+            DefineClass("BattleWarrior")
+            DefineClass("BattleBt")
+            "#,
+        );
+
+        let ty = ws.expr_ty("BattleBt.battle");
+        let warrior = ws.ty("BattleWarrior");
+        let core = ws.ty("BattleCore");
+        assert!(
+            ws.check_type(&ty, &warrior),
+            "duplicate field should resolve to the last declared type, got {:?}",
+            ty
+        );
+        assert!(
+            !ws.check_type(&ty, &core),
+            "duplicate field should not resolve to the first declared type, got {:?}",
+            ty
+        );
+    }
 }

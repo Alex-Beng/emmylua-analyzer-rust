@@ -138,6 +138,7 @@
             ]
           }
         ],
+        "classFieldTypeRules": [],
         "environmentModulePattern": [],
         "extensions": [],
         "frameworkVersions": [],
@@ -531,6 +532,27 @@
         "rst"
       ]
     },
+    "EmmyrcClassFieldTypeRule": {
+      "description": "Declares field types for a specific (globally unique) class.",
+      "type": "object",
+      "properties": {
+        "class": {
+          "description": "Exact class name, eg. \"BattleBt\".",
+          "type": "string"
+        },
+        "fields": {
+          "description": "Field type declarations for this class.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EmmyrcFieldTypeRule"
+          }
+        }
+      },
+      "required": [
+        "class"
+      ]
+    },
     "EmmyrcCodeAction": {
       "type": "object",
       "properties": {
@@ -760,6 +782,29 @@
           "minimum": 0
         }
       }
+    },
+    "EmmyrcFieldTypeRule": {
+      "description": "Declares the type of a single instance field.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Exact field name, eg. \"battle\".",
+          "type": "string"
+        },
+        "optional": {
+          "description": "Whether the field may be nil. Defaults to true (nullable).",
+          "type": "boolean",
+          "default": true
+        },
+        "type": {
+          "description": "Type name, resolved to a class reference, eg. \"BattleCore\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ]
     },
     "EmmyrcFilenameConvention": {
       "oneOf": [
@@ -1058,6 +1103,14 @@
           "default": [],
           "items": {
             "$ref": "#/$defs/EmmyrcSpecialCallRule"
+          }
+        },
+        "classFieldTypeRules": {
+          "description": "Declare the types of common instance fields per class, eg. `self.battle: BattleCore`.\nField assignments inferred from untyped constructor params otherwise degrade to `any`.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EmmyrcClassFieldTypeRule"
           }
         },
         "environmentModulePattern": {

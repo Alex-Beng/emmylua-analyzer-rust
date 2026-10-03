@@ -181,7 +181,8 @@ EmmyLua Analyzer Rust 推荐把配置写在项目根目录的 `.emmyrc.json` 中
     "special": {},
     "environmentModulePattern": [],
     "globalDefineRules": [],
-    "classDefineRules": []
+    "classDefineRules": [],
+    "classFieldTypeRules": []
   },
   "semanticTokens": {
     "enable": true,
@@ -370,6 +371,7 @@ EmmyLua Analyzer Rust 推荐把配置写在项目根目录的 `.emmyrc.json` 中
 | `environmentModulePattern` | `string[]` | `[]` | 命中这些 glob 且顶层无 `return` 的文件，其顶层全局变量将被合成为模块导出表 |
 | `globalDefineRules` | `object[]` | `registerGlobal` 规则 | 运行时注册全局变量的函数规则 |
 | `classDefineRules` | `object[]` | `DefineClass`/`DefineComponent` 规则 | 运行时定义类的函数规则 |
+| `classFieldTypeRules` | `object[]` | `[]` | 按类名声明常用实例字段的类型 |
 
 `nonstandardSymbol` 支持的值：
 
@@ -444,6 +446,33 @@ EmmyLua Analyzer Rust 推荐把配置写在项目根目录的 `.emmyrc.json` 中
 
 - `globalDefineRules` 默认一条 `registerGlobal` 规则，`name = 0, value = 1`。
 - `classDefineRules` 默认 `DefineClass` / `DefineComponent` 规则，`name = 0, super = 1`。
+
+#### 实例字段类型规则
+
+对于 `DefineClass` 合成的类，`self.field = value` 若 value 来自未标注的构造参数，
+字段类型会退化为 `any`。`classFieldTypeRules` 可按**类名**（全局唯一）声明常用字段
+的类型，分析器会把它们注入为字段成员并覆盖推断结果。
+
+- `class`：类名（精确匹配）。
+- `fields[].name`：字段名（精确匹配）。
+- `fields[].type`：类型名，解析为对该类的引用。
+- `fields[].optional`：是否可空，默认 `true`（即 `T | nil`）。
+
+```json
+{
+  "runtime": {
+    "classFieldTypeRules": [
+      {
+        "class": "BattleBt",
+        "fields": [
+          { "name": "battle", "type": "BattleCore" },
+          { "name": "warrior", "type": "BattleWarrior", "optional": false }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ### workspace
 

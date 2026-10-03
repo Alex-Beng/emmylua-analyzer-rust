@@ -181,7 +181,8 @@ This template is a good starting point for most Lua projects:
     "special": {},
     "environmentModulePattern": [],
     "globalDefineRules": [],
-    "classDefineRules": []
+    "classDefineRules": [],
+    "classFieldTypeRules": []
   },
   "semanticTokens": {
     "enable": true,
@@ -370,6 +371,7 @@ All remaining built-in rules default to `warning`:
 | `environmentModulePattern` | `string[]` | `[]` | Glob patterns of files whose top-level globals are synthesized into the module export table (for files without a top-level `return`) |
 | `globalDefineRules` | `object[]` | `registerGlobal` rule | Rules for functions that define a global at runtime |
 | `classDefineRules` | `object[]` | `DefineClass`/`DefineComponent` rules | Rules for functions that define a class at runtime |
+| `classFieldTypeRules` | `object[]` | `[]` | Declares types of common instance fields per class |
 
 Supported `nonstandardSymbol` values:
 
@@ -450,6 +452,35 @@ Defaults:
   `name = 0, value = 1`.
 - `classDefineRules` defaults to `DefineClass` / `DefineComponent` rules with
   `name = 0, super = 1`.
+
+#### Instance field type rules
+
+For classes synthesized by `DefineClass`, `self.field = value` degrades to `any`
+when `value` comes from an untyped constructor parameter. `classFieldTypeRules`
+declares the types of common fields per **class name** (globally unique); the
+analyzer injects them as field members and overrides the inferred type.
+
+- `class`: exact class name.
+- `fields[].name`: exact field name.
+- `fields[].type`: type name, resolved to a reference to that class.
+- `fields[].optional`: whether the field may be nil, defaults to `true`
+  (i.e. `T | nil`).
+
+```json
+{
+  "runtime": {
+    "classFieldTypeRules": [
+      {
+        "class": "BattleBt",
+        "fields": [
+          { "name": "battle", "type": "BattleCore" },
+          { "name": "warrior", "type": "BattleWarrior", "optional": false }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ### workspace
 

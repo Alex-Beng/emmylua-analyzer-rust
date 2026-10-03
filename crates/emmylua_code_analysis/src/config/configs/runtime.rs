@@ -40,6 +40,10 @@ pub struct EmmyrcRuntime {
     /// Rules for functions that define a class at runtime, eg. DefineClass("NAME", Super).
     #[serde(default)]
     pub class_define_rules: Vec<EmmyrcSpecialCallRule>,
+    /// Declare the types of common instance fields per class, eg. `self.battle: BattleCore`.
+    /// Field assignments inferred from untyped constructor params otherwise degrade to `any`.
+    #[serde(default)]
+    pub class_field_type_rules: Vec<EmmyrcClassFieldTypeRule>,
 }
 
 impl Default for EmmyrcRuntime {
@@ -55,8 +59,34 @@ impl Default for EmmyrcRuntime {
             environment_module_pattern: Vec::new(),
             global_define_rules: default_global_define_rules(),
             class_define_rules: default_class_define_rules(),
+            class_field_type_rules: Vec::new(),
         }
     }
+}
+
+/// Declares field types for a specific (globally unique) class.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EmmyrcClassFieldTypeRule {
+    /// Exact class name, eg. "BattleBt".
+    pub class: String,
+    /// Field type declarations for this class.
+    #[serde(default)]
+    pub fields: Vec<EmmyrcFieldTypeRule>,
+}
+
+/// Declares the type of a single instance field.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EmmyrcFieldTypeRule {
+    /// Exact field name, eg. "battle".
+    pub name: String,
+    /// Type name, resolved to a class reference, eg. "BattleCore".
+    #[serde(rename = "type")]
+    pub r#type: String,
+    /// Whether the field may be nil. Defaults to true (nullable).
+    #[serde(default = "default_true")]
+    pub optional: bool,
 }
 
 fn default_global_define_rules() -> Vec<EmmyrcSpecialCallRule> {
@@ -401,5 +431,29 @@ mod tests {
             runtime.environment_module_pattern,
             vec!["Common/battle_core/**".to_string()]
         );
+    }
+
+    #[test]
+    fn test_class_field_type_rules_deserialize() {
+        let json = r#"{
+            "classFieldTypeRules": [
+                {
+                    "class": "BattleBt",
+                    "fields": [
+                        { "name": "battle", "type": "BattleCore" },
+                        { "name": "gamer", "type": "BattleGamer", "optional": false }
+                    ]
+                }
+            ]
+        }"#;
+        let runtime: EmmyrcRuntime = serde_json::from_str(json).unwrap();
+        assert_eq!(runtime.class_field_type_rules.len(), 1);
+        let rule = &runtime.class_field_type_rules[0];
+        assert_eq!(rule.class, "BattleBt");
+        assert_eq!(rule.fields.len(), 2);
+        assert_eq!(rule.fields[0].name, "battle");
+        assert_eq!(rule.fields[0].r#type, "BattleCore");
+        assert!(rule.fields[0].optional, "optional should default to true");
+        assert!(!rule.fields[1].optional);
     }
 }
