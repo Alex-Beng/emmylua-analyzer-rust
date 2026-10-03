@@ -147,6 +147,11 @@ pub fn calculate_include_and_exclude(emmyrc: &Emmyrc) -> (Vec<String>, Vec<Strin
     let mut exclude = Vec::new();
     let mut exclude_dirs = Vec::new();
 
+    // `.d.lua` files are hand-written stub/declaration files (LuaLS style). They
+    // commonly redeclare globals/classes that are also defined by real code,
+    // which conflicts with analysis. Ignore them by default.
+    exclude.push("**/*.d.lua".to_string());
+
     for extension in &emmyrc.runtime.extensions {
         if extension.starts_with(".") {
             include.push(format!("**/*{}", extension));
@@ -820,6 +825,28 @@ mod tests {
                 .get_db()
                 .get_module_index()
                 .get_workspace_id(net_file_id)
+        );
+    }
+
+    #[test]
+    fn dot_d_lua_files_are_ignored_by_default() {
+        let workspace = TestWorkspace::new();
+        let normal = workspace.write_file("lua/main.lua");
+        let stub = workspace.write_file("lua/define_class.d.lua");
+
+        let emmyrc = Emmyrc::default();
+        let files = collect_workspace_files(
+            &[WorkspaceFolder::new(workspace.root.clone(), false)],
+            &emmyrc,
+            None,
+            None,
+        );
+
+        let loaded = loaded_paths(files);
+        assert!(loaded.contains(&normal), "normal lua file should be loaded");
+        assert!(
+            !loaded.contains(&stub),
+            "`.d.lua` stub files should be ignored by default"
         );
     }
 }

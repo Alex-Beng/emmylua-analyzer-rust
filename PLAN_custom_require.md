@@ -204,6 +204,27 @@
 回归测试：`compilation/test/cross_module_inherit_test.rs`（加载真实项目三文件，
 缺失时自动跳过）。
 
+### v5 修复：忽略 `.d.lua` stub 文件
+
+**现象**：真实项目全量加载（10151 文件）下，`self:_doAndOrLogic` 的跳转/hover
+仍解析为 `any`；但只加载 3 个文件时正常。
+
+**根因**：项目里的手写 stub `Common/define_class.d.lua` 也声明了同名全局
+（`BattleBt = {}`、`BattleAI = BATTLE_BT.BattleBt`），与我们从 `DefineClass`
+合成的全局/类**竞争**。全量加载时该 stub 被当普通 `.lua` 索引，导致
+`BattleAI` 的全局/类型解析被其干扰（取决于解析顺序，时好时坏）。
+
+**修复**：
+- 删除项目里的 `.d.lua` stub（用户侧）。
+- 分析器**默认忽略 `**/*.d.lua`**（`vfs/collect_workspace_files.rs` 的
+  `calculate_include_and_exclude`）。`.d.lua` 是 LuaLS 风格的手写声明文件，
+  常与真实代码重复声明，属默认应排除。
+
+修复后全量加载下 `BattleAI` 的 super 与继承方法均正确解析。
+回归测试：`vfs::collect_workspace_files` 新增
+`dot_d_lua_files_are_ignored_by_default`；LS 层
+`real_definition_probe_test` 覆盖增量编辑/诊断后仍可跳转。
+
 
 已知限制 / 后续可优化：
 
