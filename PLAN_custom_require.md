@@ -248,6 +248,28 @@
 测试：配置反序列化、注入/可空/不可空、重名覆盖（`custom_require_test.rs`）。
 文档（CN/EN）与 schema 同步更新。
 
+### v7 功能：运行时导出字段类型提示（`.emmyrc-fieldtypes.json`）
+
+**需求**：由游戏引擎运行时 dump "类→字段→类型名" 到一份 JSON，LS 读取作为字段
+类型提示（仅服务本项目）。
+
+**实现**：
+- 固定文件：`<工作区根>/.emmyrc-fieldtypes.json`，形状 `{ "类": { "字段": "类型" } }`。
+- 常量 `config::FIELD_TYPE_HINTS_FILE_NAME`；`Emmyrc::pre_process_emmyrc` 读取该文件，
+  转成 `EmmyrcClassFieldTypeRule`（字段默认 `optional: false`），**置于手写
+  `classFieldTypeRules` 之前**（手写优先）。解析失败仅告警。
+- 复用 `inject_class_field_types` 注入，无新分析逻辑；无新配置项，schema 不变。
+- **自动重载**：`register_file_watch.rs` 的 `WATCHED_CONFIG_GLOBS` /
+  `WATCHED_CONFIG_FILE_NAMES` 加入该文件名；`watched_file_handler.rs::get_file_type`
+  新增 `FieldTypeHints` 分支，变更/删除时走 `add_update_emmyrc_task`（其
+  `load_emmy_config`→`pre_process_emmyrc` 会重读该文件并重建工作区）。
+
+**引擎侧产物**：一段全局 Lua 函数 `dumpFieldTypes(roots, maxDepth)`，遍历传入的根
+对象，用 `__cname`/`instance.class` 取类型名，`Common.Lib.JSON` 的 `encode_pretty`
+输出形状 JSON（非类实例字段跳过）。
+
+测试：`config::tests::test_pre_process_loads_field_type_hints_file`（含手写优先）。
+
 
 已知限制 / 后续可优化：
 

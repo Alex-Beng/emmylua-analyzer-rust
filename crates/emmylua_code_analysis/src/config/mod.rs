@@ -23,6 +23,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::pre_process::PreProcessContext;
 
+/// Well-known file name (in the workspace root) for runtime-dumped field type
+/// hints, consumed during `pre_process_emmyrc`.
+pub const FIELD_TYPE_HINTS_FILE_NAME: &str = ".emmyrc-fieldtypes.json";
+
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Emmyrc {
@@ -114,5 +118,119 @@ impl Emmyrc {
             context.process_and_dedup_string(self.workspace.ignore_dir.iter());
 
         self.resource.paths = context.process_and_dedup_string(self.resource.paths.iter());
+
+        self.load_field_type_hints(workspace_root);
+    }
+
+    /// Load runtime-dumped field type hints from the well-known file
+    /// `<workspace_root>/.emmyrc-fieldtypes.json` (shape: `{ class: { field: type } }`).
+    ///
+    /// These are merged *before* the hand-written `classFieldTypeRules`, so an
+    /// explicit rule overrides a dumped one for the same field.
+    fn load_field_type_hints(&mut self, workspace_root: &Path) {
+        let path = workspace_root.join(FIELD_TYPE_HINTS_FILE_NAME);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return;
+        };
+
+        let parsed: HashMap<String, HashMap<String, String>> = match serde_json::from_str(&text) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                log::warn!("failed to parse {}: {}", FIELD_TYPE_HINTS_FILE_NAME, err);
+                return;
+            }
+        };
+
+        let mut rules: Vec<EmmyrcClassFieldTypeRule> = parsed
+            .into_iter()
+            .map(|(class, fields)| EmmyrcClassFieldTypeRule {
+                class,
+                fields: fields
+                    .into_iter()
+                    .map(|(name, r#type)| EmmyrcFieldTypeRule {
+                        name,
+                        r#type,
+                        // Runtime-dumped types are exact and usually non-nil.
+                        optional: false,
+                    })
+                    .collect(),
+            })
+            .collect();
+        rules.sort_by(|a, b| a.class.cmp(&b.class));
+
+        // Dumped rules come first; hand-written rules keep precedence.
+        rules.extend(std::mem::take(&mut self.runtime.class_field_type_rules));
+        self.runtime.class_field_type_rules = rules;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn temp_dir() -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "emmylua-fieldtype-hints-{}-{}",
+            std::process::id(),
+            unique
+        ));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn test_pre_process_loads_field_type_hints_file() {
+        let root = temp_dir();
+        fs::write(
+            root.join(FIELD_TYPE_HINTS_FILE_NAME),
+            r#"{ "BattleBt": { "battle": "BattleCore", "warrior": "BattleWarrior" } }"#,
+        )
+        .unwrap();
+
+        let mut emmyrc = Emmyrc::default();
+        // A hand-written rule for the same class/field must take precedence.
+        emmyrc.runtime.class_field_type_rules = vec![EmmyrcClassFieldTypeRule {
+            class: "BattleBt".to_string(),
+            fields: vec![EmmyrcFieldTypeRule {
+                name: "battle".to_string(),
+                r#type: "MyOverride".to_string(),
+                optional: false,
+            }],
+        }];
+
+        emmyrc.pre_process_emmyrc(&root);
+
+        let rules = &emmyrc.runtime.class_field_type_rules;
+        let bt_rules: Vec<&EmmyrcClassFieldTypeRule> =
+            rules.iter().filter(|r| r.class == "BattleBt").collect();
+        assert_eq!(bt_rules.len(), 2, "dumped + hand-written rules");
+
+        // Dumped rule first, hand-written rule last (so hand-written wins in
+        // `inject_class_field_types`, which keeps the last field declaration).
+        let dumped = bt_rules[0];
+        let handwritten = bt_rules[1];
+        assert_eq!(handwritten.fields[0].r#type, "MyOverride");
+
+        let warrior = dumped.fields.iter().find(|f| f.name == "warrior").unwrap();
+        assert_eq!(warrior.r#type, "BattleWarrior");
+        assert!(!warrior.optional, "dumped fields default to non-optional");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_pre_process_without_field_type_hints_file() {
+        let root = temp_dir();
+        let mut emmyrc = Emmyrc::default();
+        emmyrc.pre_process_emmyrc(&root);
+        assert!(emmyrc.runtime.class_field_type_rules.is_empty());
+        let _ = fs::remove_dir_all(&root);
     }
 }

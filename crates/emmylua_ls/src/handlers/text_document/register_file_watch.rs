@@ -19,17 +19,19 @@ use crate::{
 use emmylua_code_analysis::{WorkspaceFileMatcher, WorkspaceFolder};
 
 const WATCH_FILES_REGISTRATION_ID: &str = "emmylua_watch_files";
-const WATCHED_CONFIG_GLOBS: [&str; 4] = [
+const WATCHED_CONFIG_GLOBS: [&str; 5] = [
     "**/.editorconfig",
     "**/.luarc.json",
     "**/.emmyrc.json",
     "**/.emmyrc.lua",
+    "**/.emmyrc-fieldtypes.json",
 ];
-const WATCHED_CONFIG_FILE_NAMES: [&str; 4] = [
+const WATCHED_CONFIG_FILE_NAMES: [&str; 5] = [
     ".editorconfig",
     ".luarc.json",
     ".emmyrc.json",
     ".emmyrc.lua",
+    emmylua_code_analysis::FIELD_TYPE_HINTS_FILE_NAME,
 ];
 
 pub async fn register_files_watch(context: ServerContextSnapshot) {

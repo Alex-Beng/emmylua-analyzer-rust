@@ -53,6 +53,19 @@ pub async fn on_did_change_watched_files(
                     .await
                     .add_update_emmyrc_task(context.clone(), config_path);
             }
+            Some(WatchedFileType::FieldTypeHints) => {
+                // Reload the config (which re-reads `.emmyrc-fieldtypes.json`
+                // during pre-process) and rebuild the workspace. Also handle
+                // deletion so previously injected field types are cleared.
+                let Some(config_path) = uri_to_file_path(&file_event.uri) else {
+                    continue;
+                };
+                context
+                    .workspace_manager()
+                    .read()
+                    .await
+                    .add_update_emmyrc_task(context.clone(), config_path);
+            }
             None => {}
         }
     }
@@ -89,6 +102,7 @@ fn collect_lua_files(
 enum WatchedFileType {
     Lua,
     Emmyrc,
+    FieldTypeHints,
 }
 
 fn get_file_type(uri: &Uri) -> Option<WatchedFileType> {
@@ -96,6 +110,9 @@ fn get_file_type(uri: &Uri) -> Option<WatchedFileType> {
     let file_name = path.file_name()?.to_str()?;
     match file_name {
         ".emmyrc.json" | ".luarc.json" | ".emmyrc.lua" => Some(WatchedFileType::Emmyrc),
+        name if name == emmylua_code_analysis::FIELD_TYPE_HINTS_FILE_NAME => {
+            Some(WatchedFileType::FieldTypeHints)
+        }
         _ => Some(WatchedFileType::Lua),
     }
 }

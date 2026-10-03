@@ -482,6 +482,26 @@ analyzer injects them as field members and overrides the inferred type.
 }
 ```
 
+##### Runtime-exported field types (`.emmyrc-fieldtypes.json`)
+
+A runtime (game engine) can export a field type table to the fixed file
+`.emmyrc-fieldtypes.json` in the **workspace root**, shaped as
+`{ "ClassName": { "fieldName": "TypeName" } }`:
+
+```json
+{
+  "BattleBt": { "battle": "BattleCore", "warrior": "BattleWarrior" }
+}
+```
+
+- Read during config pre-processing (`pre_process_emmyrc`); fields default to
+  **non-optional**.
+- When it conflicts with a hand-written `classFieldTypeRules`, the
+  **hand-written rule wins**.
+- Changes to the file automatically trigger a config reload and workspace
+  rebuild (no restart needed).
+- Parse failures are ignored (logged only).
+
 ### workspace
 
 | Field | Type | Default | Description |

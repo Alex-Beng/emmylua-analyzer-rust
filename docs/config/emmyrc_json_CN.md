@@ -474,6 +474,22 @@ EmmyLua Analyzer Rust 推荐把配置写在项目根目录的 `.emmyrc.json` 中
 }
 ```
 
+##### 运行时导出字段类型（`.emmyrc-fieldtypes.json`）
+
+也可以由运行时（游戏引擎）导出一份字段类型表，放在**工作区根目录**的固定文件
+`.emmyrc-fieldtypes.json`，格式为 `{ "类名": { "字段名": "类型名" } }`：
+
+```json
+{
+  "BattleBt": { "battle": "BattleCore", "warrior": "BattleWarrior" }
+}
+```
+
+- 该文件在配置预处理（`pre_process_emmyrc`）时读取，字段类型默认**非空**。
+- 与手写 `classFieldTypeRules` 冲突时，**手写规则优先**。
+- 文件变化会自动触发配置重载与工作区重建（无需重启）。
+- 解析失败会被忽略（仅记录日志）。
+
 ### workspace
 
 | 字段 | 类型 | 默认值 | 说明 |
