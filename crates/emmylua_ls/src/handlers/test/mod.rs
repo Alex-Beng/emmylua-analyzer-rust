@@ -4,6 +4,7 @@ mod completion_test;
 mod definition_test;
 mod hover_function_test;
 mod hover_test;
+mod real_definition_probe_test;
 mod implementation_test;
 mod inlay_hint_test;
 mod references_test;
