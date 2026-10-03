@@ -12,6 +12,7 @@ use crate::{
         unresolve::resolve::{try_resolve_call, try_resolve_class_constructor},
     },
     db_index::{DbIndex, LuaDeclId, LuaMemberId, LuaSignatureId},
+    LuaTypeDeclId,
     profile::Profile,
 };
 use check_reason::{check_reach_reason, resolve_all_reason};
@@ -21,7 +22,8 @@ use emmylua_parser::{
 };
 use resolve::{
     try_resolve_decl, try_resolve_iter_var, try_resolve_member, try_resolve_module,
-    try_resolve_module_ref, try_resolve_return_point, try_resolve_table_field,
+    try_resolve_module_ref, try_resolve_return_point, try_resolve_super_type,
+    try_resolve_table_field,
 };
 use resolve_closure::{
     try_resolve_call_closure_params, try_resolve_closure_parent_params, try_resolve_closure_return,
@@ -211,6 +213,9 @@ fn try_resolve(
                     UnResolve::Call(un_resolve_call) => {
                         try_resolve_call(db, cache, un_resolve_call)
                     }
+                    UnResolve::SuperType(un_resolve_super_type) => {
+                        try_resolve_super_type(db, cache, un_resolve_super_type)
+                    }
                 };
 
                 match resolve_result {
@@ -276,6 +281,7 @@ pub enum UnResolve {
     TableField(Box<UnResolveTableField>),
     ClassConstructor(Box<UnResolveConstructor>),
     Call(Box<UnResolveCall>),
+    SuperType(Box<UnResolveSuperType>),
 }
 
 #[allow(dead_code)]
@@ -304,6 +310,7 @@ impl UnResolve {
             UnResolve::ClassConstructor(un_resolve_constructor) => {
                 Some(un_resolve_constructor.file_id)
             }
+            UnResolve::SuperType(un_resolve_super_type) => Some(un_resolve_super_type.file_id),
         }
     }
 }
@@ -346,6 +353,22 @@ pub struct UnResolveModule {
 impl From<UnResolveModule> for UnResolve {
     fn from(un_resolve_module: UnResolveModule) -> Self {
         UnResolve::Module(Box::new(un_resolve_module))
+    }
+}
+
+/// A super type (`DefineClass("Derived", Super)` / `---@class Derived : Super`)
+/// whose expression could not be resolved yet. Retried after the whole project
+/// is indexed, since the super may live in another module/file.
+#[derive(Debug)]
+pub struct UnResolveSuperType {
+    pub file_id: FileId,
+    pub type_id: LuaTypeDeclId,
+    pub super_expr: LuaExpr,
+}
+
+impl From<UnResolveSuperType> for UnResolve {
+    fn from(un_resolve_super_type: UnResolveSuperType) -> Self {
+        UnResolve::SuperType(Box::new(un_resolve_super_type))
     }
 }
 

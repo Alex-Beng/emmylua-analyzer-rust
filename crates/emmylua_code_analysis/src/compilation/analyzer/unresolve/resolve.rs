@@ -23,7 +23,7 @@ use crate::{
 
 use super::{
     ResolveResult, UnResolveDecl, UnResolveIterVar, UnResolveMember, UnResolveModule,
-    UnResolveModuleRef, UnResolveReturn, UnResolveTableField,
+    UnResolveModuleRef, UnResolveReturn, UnResolveSuperType, UnResolveTableField,
 };
 
 pub fn try_resolve_decl(
@@ -39,6 +39,26 @@ pub fn try_resolve_decl(
         .unwrap_or(LuaType::Unknown);
 
     bind_type(db, decl_id.into(), LuaTypeCache::InferType(expr_type));
+    Ok(())
+}
+
+/// Retry binding a super type whose expression was unresolved during the main
+/// analysis pass (eg. a super class from another module/file).
+pub fn try_resolve_super_type(
+    db: &mut DbIndex,
+    cache: &mut LuaInferCache,
+    super_type: &mut UnResolveSuperType,
+) -> ResolveResult {
+    let expr = super_type.super_expr.clone();
+    let super_ty = infer_expr(db, cache, expr)?;
+    if super_ty.is_unknown() {
+        return Err(InferFailReason::None);
+    }
+    db.get_type_index_mut().add_super_type(
+        super_type.type_id.clone(),
+        super_type.file_id,
+        super_ty,
+    );
     Ok(())
 }
 

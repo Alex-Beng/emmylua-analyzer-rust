@@ -7,6 +7,7 @@ mod custom_require_test;
 mod closure_generic;
 mod closure_param_infer_test;
 mod closure_return_test;
+mod cross_module_inherit_test;
 mod decl_test;
 mod diagnostic_disable_test;
 mod flow;

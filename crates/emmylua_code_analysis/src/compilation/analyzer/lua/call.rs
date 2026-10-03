@@ -4,7 +4,7 @@ use crate::{
     InferFailReason, LuaBuiltinAttributeKind, LuaType, LuaTypeCache, LuaTypeDeclId,
     compilation::analyzer::{
         lua::LuaAnalyzer,
-        unresolve::{UnResolveCall, UnResolveConstructor},
+        unresolve::{UnResolveCall, UnResolveConstructor, UnResolveDecl, UnResolveSuperType},
     },
     config::{EmmyrcParamRole, EmmyrcSpecialCallRule},
 };
@@ -154,18 +154,39 @@ fn bind_global_define(
         return;
     };
 
-    let value_type = analyzer.infer_expr(&value_expr).unwrap_or(LuaType::Unknown);
-    let value_type = value_type.get_result_slot_type(0).unwrap_or(value_type);
-    // Widen literals: registered globals are runtime values, so keeping the
-    // literal type would cause spurious downstream conditions/assign checks.
-    let value_type = crate::widen_literal_type(value_type);
-
     let range = call_expr.syntax().text_range();
-    if let Some(decl_id) = find_synthetic_global_decl(analyzer, &name, range) {
-        analyzer
-            .db
-            .get_type_index_mut()
-            .bind_type(decl_id.into(), LuaTypeCache::InferType(value_type));
+    let Some(decl_id) = find_synthetic_global_decl(analyzer, &name, range) else {
+        return;
+    };
+
+    match analyzer.infer_expr(&value_expr) {
+        Ok(value_type) => {
+            let value_type = value_type.get_result_slot_type(0).unwrap_or(value_type);
+            // Widen literals: registered globals are runtime values, so keeping
+            // the literal type would cause spurious conditions/assign checks.
+            let value_type = crate::widen_literal_type(value_type);
+            analyzer
+                .db
+                .get_type_index_mut()
+                .bind_type(decl_id.into(), LuaTypeCache::InferType(value_type));
+        }
+        Err(InferFailReason::None) => {
+            // The value has no resolvable type (eg. a bare `nil`); leave it.
+        }
+        Err(reason) => {
+            // The value expression may depend on modules/files that are not
+            // analyzed yet (eg. `import("...")`). Register an unresolve so the
+            // binding is retried after the whole project is indexed. Without
+            // this, cross-file `registerGlobal`/`registerBattleModule` bindings
+            // would stay `unknown`.
+            let unresolve = UnResolveDecl {
+                file_id: analyzer.file_id,
+                decl_id,
+                expr: value_expr,
+                ret_idx: 0,
+            };
+            analyzer.context.add_unresolve(unresolve.into(), reason);
+        }
     }
 }
 
@@ -195,15 +216,35 @@ fn bind_class_define(
     // Register super types.
     if let Some(super_idx) = rule.get_index(EmmyrcParamRole::Super) {
         for super_expr in args.iter().skip(super_idx) {
-            let super_type = analyzer.infer_expr(super_expr).unwrap_or(LuaType::Unknown);
-            if super_type.is_unknown() {
-                continue;
+            match analyzer.infer_expr(super_expr) {
+                Ok(super_type) if !super_type.is_unknown() => {
+                    analyzer.db.get_type_index_mut().add_super_type(
+                        type_id.clone(),
+                        analyzer.file_id,
+                        super_type,
+                    );
+                }
+                Ok(_) => {
+                    // Unknown type: retry later, it may depend on a module that
+                    // is not indexed yet.
+                    let unresolve = UnResolveSuperType {
+                        file_id: analyzer.file_id,
+                        type_id: type_id.clone(),
+                        super_expr: super_expr.clone(),
+                    };
+                    analyzer
+                        .context
+                        .add_unresolve(unresolve.into(), InferFailReason::None);
+                }
+                Err(reason) => {
+                    let unresolve = UnResolveSuperType {
+                        file_id: analyzer.file_id,
+                        type_id: type_id.clone(),
+                        super_expr: super_expr.clone(),
+                    };
+                    analyzer.context.add_unresolve(unresolve.into(), reason);
+                }
             }
-            analyzer.db.get_type_index_mut().add_super_type(
-                type_id.clone(),
-                analyzer.file_id,
-                super_type,
-            );
         }
     }
 }

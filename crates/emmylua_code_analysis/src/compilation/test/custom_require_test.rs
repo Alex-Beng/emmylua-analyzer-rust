@@ -427,4 +427,168 @@ mod test {
             ty
         );
     }
+
+    #[test]
+    fn test_define_class_method_body_errors_still_registers_member() {
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+
+        // Mirrors battle_bt.lua: a method whose body references a method defined
+        // later in the file (forward reference), and uses a value that may fail
+        // inference. The member must still be registered.
+        ws.def(
+            r#"
+            DefineClass("BattleBt")
+
+            function BattleBt:init()
+                self.triggerType = nil
+            end
+
+            function BattleBt:_doAndOrLogic(idList, andor, cmpFunc, triggerId)
+                andor = andor or '&'
+                if #idList > 0 then
+                    if andor == '&' then
+                        for _, id in ipairs(idList) do
+                            if not cmpFunc(id) then
+                                return false
+                            end
+                        end
+                        return true
+                    elseif andor == '|' then
+                        for _, id in ipairs(idList) do
+                            if cmpFunc(id) then
+                                self:recordTriggerId(triggerId, id)
+                                return true
+                            end
+                        end
+                        return false
+                    end
+                end
+                return false
+            end
+
+            function BattleBt:recordTriggerId(triggerId, recordId)
+            end
+            "#,
+        );
+
+        // Both members must be registered on the class.
+        let init_ty = ws.expr_ty("BattleBt.init");
+        assert!(
+            !matches!(init_ty, LuaType::Unknown),
+            "BattleBt.init should be registered, got {:?}",
+            init_ty
+        );
+        let do_ty = ws.expr_ty("BattleBt._doAndOrLogic");
+        assert!(
+            !matches!(do_ty, LuaType::Unknown | LuaType::Any),
+            "BattleBt._doAndOrLogic should be registered with a concrete type, got {:?}",
+            do_ty
+        );
+    }
+
+    #[test]
+    fn test_derived_self_sees_inherited_method() {
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+
+        ws.def(
+            r#"
+            DefineClass("BattleBt")
+            function BattleBt:_doAndOrLogic(idList, andor, cmpFunc, triggerId)
+                return false
+            end
+
+            DefineClass("BattleAI", BattleBt)
+            function BattleAI:run()
+                return self:_doAndOrLogic({}, "&", function(id) return true end, 1)
+            end
+            "#,
+        );
+
+        // `self:_doAndOrLogic` inside a derived method resolves to the
+        // inherited method, not `any`.
+        let ty = ws.expr_ty("BattleAI._doAndOrLogic");
+        assert!(
+            !matches!(ty, LuaType::Unknown | LuaType::Any),
+            "BattleAI should inherit _doAndOrLogic, got {:?}",
+            ty
+        );
+    }
+
+    #[test]
+    fn test_self_colon_call_inside_same_class_resolves() {
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+
+        // Directly mirror the real file: method A calls self:methodB where
+        // methodB is defined *after* A.
+        ws.def_file(
+            "battle_bt.lua",
+            r#"
+            DefineClass("BattleBt")
+
+            function BattleBt:getX()
+                return self:_doAndOrLogic({1,2}, "&", function(id) return true end, 1)
+            end
+
+            function BattleBt:_doAndOrLogic(idList, andor, cmpFunc, triggerId)
+                andor = andor or '&'
+                if #idList > 0 then
+                    if andor == '&' then
+                        for _, id in ipairs(idList) do
+                            if not cmpFunc(id) then
+                                return false
+                            end
+                        end
+                        return true
+                    end
+                end
+                return false
+            end
+            "#,
+        );
+
+        // The call result should be boolean, proving `_doAndOrLogic` resolves.
+        let ty = ws.expr_ty("BattleBt:_doAndOrLogic({1}, '&', function(q) return true end, 1)");
+        assert!(
+            !matches!(ty, LuaType::Unknown | LuaType::Any),
+            "self:_doAndOrLogic should resolve, got {:?}",
+            ty
+        );
+    }
+
+    #[test]
+    fn test_cross_module_super_method_visible() {
+        let mut ws = VirtualWorkspace::new_with_init_std_lib();
+        ws.update_emmyrc(emmyrc_with_environment_module());
+
+        ws.def_files(vec![
+            (
+                "Common/battle_core/battle_bt.lua",
+                r#"
+                ---@module BATTLE_BT
+                DefineClass("BattleBt")
+                function BattleBt:_doAndOrLogic(idList, andor, cmpFunc, triggerId)
+                    return false
+                end
+                "#,
+            ),
+            (
+                "Common/battle_core/battle_ai.lua",
+                r#"
+                ---@module BATTLE_AI
+                local BATTLE_BT = import("Common/battle_core/battle_bt")
+                DefineClass("BattleAI", BATTLE_BT.BattleBt)
+                function BattleAI:run()
+                    return self:_doAndOrLogic({}, "&", function(id) return true end, 1)
+                end
+                "#,
+            ),
+        ]);
+
+        let ty = ws.expr_ty("import('Common/battle_core/battle_bt').BattleBt._doAndOrLogic");
+        assert!(
+            !matches!(ty, LuaType::Unknown | LuaType::Any),
+            "cross-module _doAndOrLogic should be visible, got {:?}",
+            ty
+        );
+    }
 }

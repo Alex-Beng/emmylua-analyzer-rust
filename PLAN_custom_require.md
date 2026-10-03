@@ -180,12 +180,34 @@
 绝大多数诊断低于基线，仅 `duplicate-type`(+9)、`return-type-mismatch`(+16) 等少量
 新增，多为真实存在的重复类/类型问题。
 
+### v4 修复：跨文件定时序（继承方法丢失）
+
+**现象**：`DefineClass("BattleAI", BATTLE_BT.BattleBt)` 后，`self:_doAndOrLogic()`
+（父类方法）补全缺失、类型解析为 `any`、无法跳转。
+
+**根因**：跨文件时序。`battle_ai.lua` 分析时 `BATTLE_BT`（由 `require.lua` 的
+`registerBattleModule` 定义、值为 `import(...)`）尚未解析：
+- `bind_global_define` 一次性 `infer_expr` 得到 `Unknown` 后**永久绑定**，无重试；
+- `bind_class_define` 的父类 `BATTLE_BT.BattleBt` 因此为 `Unknown` → `add_super_type`
+  **被跳过**，导致 `BattleAI` super 缺失 → 继承成员全部解析为 `any`
+  （命中 Open 兜底）。而 find reference 走同名引用索引 + origin 回溯，故仍可用。
+
+**修复**：
+- `lua/call.rs::bind_global_define`：值表达式推断失败/未解析时注册 `UnResolveDecl`
+  重试（复用现有机制）。
+- 新增 `UnResolveSuperType` 变体（`unresolve/mod.rs` + `resolve.rs::try_resolve_super_type`）：
+  `bind_class_define` 的父类表达式未解析时注册重试，分析全部结束后再补 `add_super_type`。
+
+修复后 `BattleAI super_types => Some([Def(BattleBt)])`，继承方法
+（`_doAndOrLogic`/`recordTriggerId`/...）均可补全与跳转。诊断数量不回归。
+
+回归测试：`compilation/test/cross_module_inherit_test.rs`（加载真实项目三文件，
+缺失时自动跳过）。
+
 
 已知限制 / 后续可优化：
 
 - 合成全局 decl 的 `TextRange` 采用调用表达式范围（方案 a），跳转定位到调用行。
-- 顶层全局类型若在首轮分析时未解析（跨文件类/函数），可能先为 `Unknown`；
-  后续 reindex 或增量分析可补全。未注册 `UnResolve` 重试，属可接受范围。
 - `registerBattleModule(name, module)` 这类**包装函数**：因内部 `registerGlobal(name,...)`
   用的是参数而非字面量，静态不可知；需在配置里直接为包装函数加规则
   （`globalDefineRules` 指向 `registerBattleModule`，`name=0,value=1`）。
